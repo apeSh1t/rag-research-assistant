@@ -1,23 +1,27 @@
-import logo from './logo.svg';
-import './App.css';
+// src/App.js
+import React, { useState } from 'react';
+import FileUpload from './components/FileUpload';
+import Search from './components/Search';
+import DocumentDisplay from './components/DocumentDisplay';
 
 function App() {
+  const [documentData, setDocumentData] = useState(null);
+  const [documents, setDocuments] = useState([]);
+
+  const handleFileParsed = (parsedData) => {
+    setDocumentData(parsedData);
+    // Adding parsed document to documents array
+    setDocuments((prevDocs) => [...prevDocs, parsedData]);
+  };
+
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <h1>RAG-based Research Assistance System</h1>
+      
+      <FileUpload onFileParsed={handleFileParsed} />
+      {documentData && <DocumentDisplay documentData={documentData} />}
+      
+      <Search documents={documents} />
     </div>
   );
 }
