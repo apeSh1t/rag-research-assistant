@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { TextField, Button, Box, Typography } from '@mui/material';
+import { API_ENDPOINTS } from '../config';
 
 const Search = ({ documents }) => {
   const [query, setQuery] = useState('');
@@ -18,7 +19,7 @@ const Search = ({ documents }) => {
     }
 
     try {
-      const response = await fetch('/api/search', {
+      const response = await fetch(API_ENDPOINTS.SEARCH, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query })

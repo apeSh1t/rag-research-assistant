@@ -1,5 +1,6 @@
 // src/components/FileUpload.js
 import React, { useState } from 'react';
+import { API_ENDPOINTS } from '../config';
 
 const FileUpload = ({ onFileParsed }) => {
   const [file, setFile] = useState(null);
@@ -22,7 +23,7 @@ const FileUpload = ({ onFileParsed }) => {
     formData.append('file', file);
 
     try {
-      const uploadResponse = await fetch('/api/upload', {
+      const uploadResponse = await fetch(API_ENDPOINTS.UPLOAD, {
         method: 'POST',
         body: formData,
       });
@@ -33,7 +34,7 @@ const FileUpload = ({ onFileParsed }) => {
         const fileId = uploadData.data.paperId;
 
         // Now, parse the document
-        const parseResponse = await fetch(`/api/parse`, {
+        const parseResponse = await fetch(API_ENDPOINTS.PARSE, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fileId }),
