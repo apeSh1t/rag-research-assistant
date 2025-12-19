@@ -1,6 +1,8 @@
 from pathlib import Path
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 class KnowledgeBase:
     def __init__(self, kb_dir: str = "knowledge_base", use_english: bool = True):
@@ -72,3 +74,54 @@ class KnowledgeBase:
             return f"知识库包含 {len(titles)} 个文档:\n" + "\n".join(f"- {title}" for title in titles)
         except Exception as e:
             return f"获取文档列表失败: {e}"
+    
+    def add_pdf_document(self, pdf_path: str, title: str = None):
+        """
+        增量添加PDF文档到知识库
+        
+        Args:
+            pdf_path: PDF文件路径
+            title: 文档标题（可选，默认使用文件名）
+        
+        Returns:
+            dict: 包含成功状态和处理信息
+        """
+        if self.vector_store is None:
+            return {
+                "success": False,
+                "message": "Knowledge base not loaded"
+            }
+        
+        try:
+            # 1. 加载PDF
+            loader = PyPDFLoader(pdf_path)
+            documents = loader.load()
+            
+            # 2. 添加元数据
+            doc_title = title or Path(pdf_path).name
+            for doc in documents:
+                doc.metadata['title'] = doc_title
+            
+            # 3. 分割文本（使用与build_index_en.py相同的配置）
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1500,
+                chunk_overlap=50,
+                separators=["\n\n", "\n", ". ", "! ", "? ", "; ", " "]
+            )
+            split_docs = text_splitter.split_documents(documents)
+            
+            # 4. 添加到向量库
+            self.vector_store.add_documents(split_docs)
+            
+            return {
+                "success": True,
+                "message": f"Successfully indexed {len(split_docs)} chunks from PDF",
+                "chunks": len(split_docs),
+                "title": doc_title
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to index PDF: {str(e)}"
+            }
