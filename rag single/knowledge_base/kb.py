@@ -75,53 +75,102 @@ class KnowledgeBase:
         except Exception as e:
             return f"获取文档列表失败: {e}"
     
-    def add_pdf_document(self, pdf_path: str, title: str = None):
+    def add_document(self, file_path: str, title: str = None):
         """
-        增量添加PDF文档到知识库
-        
-        Args:
-            pdf_path: PDF文件路径
-            title: 文档标题（可选，默认使用文件名）
-        
-        Returns:
-            dict: 包含成功状态和处理信息
+        通用文档添加方法，支持 PDF, DOCX, TXT, MD
         """
         if self.vector_store is None:
-            return {
-                "success": False,
-                "message": "Knowledge base not loaded"
-            }
+            return {"success": False, "message": "Knowledge base not loaded"}
+        
+        file_path_obj = Path(file_path)
+        file_ext = file_path_obj.suffix.lower()
+        doc_title = title or file_path_obj.name
+        
+        print(f"  [KB] 正在处理文档: {doc_title} ({file_ext})")
         
         try:
-            # 1. 加载PDF
-            loader = PyPDFLoader(pdf_path)
-            documents = loader.load()
+            documents = []
+            if file_ext == '.pdf':
+                print(f"  [KB] 正在加载 PDF 内容...")
+                try:
+                    from langchain_community.document_loaders import PyPDFLoader
+                    loader = PyPDFLoader(str(file_path))
+                    documents = loader.load()
+                except Exception:
+                    import PyPDF2
+                    with open(file_path, "rb") as f:
+                        reader = PyPDF2.PdfReader(f)
+                        for page in reader.pages:
+                            text = page.extract_text()
+                            if text:
+                                from langchain_core.documents import Document
+                                documents.append(Document(page_content=text))
             
-            # 2. 添加元数据
-            doc_title = title or Path(pdf_path).name
+            elif file_ext == '.docx':
+                print(f"  [KB] 正在加载 Word 内容...")
+                from langchain_community.document_loaders import Docx2txtLoader
+                loader = Docx2txtLoader(str(file_path))
+                documents = loader.load()
+                
+            elif file_ext in ['.txt', '.md']:
+                print(f"  [KB] 正在加载文本内容...")
+                from langchain_community.document_loaders import TextLoader
+                loader = TextLoader(str(file_path), encoding='utf-8')
+                documents = loader.load()
+            
+            if not documents:
+                return {"success": False, "message": f"未能从文件 {file_ext} 中提取内容"}
+
+            print(f"  [KB] 内容提取完成, 正在进行文本切分...")
+            # 添加元数据
             for doc in documents:
                 doc.metadata['title'] = doc_title
+                doc.metadata['source'] = str(file_path_obj.name)
             
-            # 3. 分割文本（使用与build_index_en.py相同的配置）
+            # 分割文本
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1500,
-                chunk_overlap=50,
-                separators=["\n\n", "\n", ". ", "! ", "? ", "; ", " "]
+                chunk_size=1000,
+                chunk_overlap=100,
+                separators=["\n\n", "\n", ". ", " "]
             )
             split_docs = text_splitter.split_documents(documents)
             
-            # 4. 添加到向量库
+            print(f"  [KB] 切分完成, 共有 {len(split_docs)} 个片段。正在调用 Embedding 模型写入向量库...")
+            print(f"  [KB] 注意: 如果是首次运行, 模型加载可能需要 1-2 分钟...")
+            
+            # 添加到向量库
             self.vector_store.add_documents(split_docs)
             
+            print(f"  [KB] 向量库写入成功!")
             return {
                 "success": True,
-                "message": f"Successfully indexed {len(split_docs)} chunks from PDF",
+                "message": f"成功索引 {len(split_docs)} 个片段",
                 "chunks": len(split_docs),
                 "title": doc_title
             }
             
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"Failed to index PDF: {str(e)}"
-            }
+            return {"success": False, "message": f"索引失败: {str(e)}"}
+
+    def add_pdf_document(self, pdf_path: str, title: str = None):
+        """保持向后兼容"""
+        return self.add_document(pdf_path, title)
+
+    def delete_document(self, title: str):
+        """从向量库中删除文档"""
+        if self.vector_store is None:
+            return False
+        try:
+            # 1. 查找具有该 title 的所有文档的 ID
+            # Chroma 的 get 方法支持 where 过滤
+            results = self.vector_store.get(where={"title": title})
+            ids = results.get("ids", [])
+            
+            if ids:
+                # 2. 按 ID 删除
+                self.vector_store.delete(ids=ids)
+                return True
+            return False
+        except Exception as e:
+            print(f"Error deleting document from vector store: {e}")
+            return False

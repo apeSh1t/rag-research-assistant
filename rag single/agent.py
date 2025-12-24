@@ -13,15 +13,22 @@ from knowledge_base.kb import KnowledgeBase
 class Agent:
     """规划Agent：基于知识库和工具接口json schema，生成分步、结构化的解决方案计划"""
     
-    def __init__(self, knowledge_base: KnowledgeBase, tools_schema_path: str = "tools_schema.json", model_name: str = "qwen-max"):
+    def __init__(self, knowledge_base: KnowledgeBase, tools_schema_path: str = None, model_name: str = "qwen-max", api_key: str = None, base_url: str = None):
         self.kb = knowledge_base
+        
+        # 默认在当前文件所在目录查找 tools_schema.json
+        if tools_schema_path is None:
+            import os
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            tools_schema_path = os.path.join(current_dir, "tools_schema.json")
+            
         self.tools_schema = self._load_tools_schema(tools_schema_path)
         
         # 创建知识库搜索工具
         @tool
         def search_knowledge(query: str) -> str:
             """
-            搜索知识库获取相关信息。。
+            搜索知识库获取相关信息。
             """
             return self.kb.retrieve(query, k=3)
         
@@ -32,8 +39,8 @@ class Agent:
         self.llm = ChatOpenAI(
             model=model_name,
             temperature=0.1,
-            api_key="your-api-key-here",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            api_key=api_key or "your-api-key-here",
+            base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
         )
         
         # 设置规划Agent

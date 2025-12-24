@@ -28,25 +28,37 @@ async def search_documents(request: SearchRequest):
         kb = KnowledgeBase(str(kb_dir), use_english=True)
         
         # 搜索
-        results_text = kb.retrieve(request.query, k=5)
-        
-        # 简单解析结果
-        results = []
-        if results_text and "未找到" not in results_text:
-            sections = results_text.split('\n\n')
-            for section in sections[:5]:
-                if section.strip():
-                    results.append({
-                        "section": "Document",
-                        "content": section.strip()[:200],  # 限制长度
-                        "score": 0.0
+        # 修改 kb.retrieve 以返回原始结果或更易解析的格式
+        # 这里我们直接调用 vector_store 进行搜索以获取更多元数据
+        if kb.vector_store:
+            results_with_scores = kb.vector_store.similarity_search_with_score(request.query, k=5)
+            
+            formatted_results = []
+            for doc, score in results_with_scores:
+                if score < 1.2: # 稍微放宽一点阈值
+                    formatted_results.append({
+                        "section": doc.metadata.get("title", "未知文档"),
+                        "content": doc.page_content,
+                        "score": float(score),
+                        "source": doc.metadata.get("source", "未知来源")
                     })
+            
+            return {
+                "status": "success",
+                "message": f"Found {len(formatted_results)} results",
+                "data": formatted_results
+            }
         
         return {
             "status": "success",
-            "message": "Search completed",
-            "data": results
+            "message": "Knowledge base not loaded",
+            "data": []
         }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
         
     except Exception as e:
         return {
