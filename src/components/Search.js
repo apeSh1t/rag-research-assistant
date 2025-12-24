@@ -14,11 +14,21 @@ import SearchIcon from '@mui/icons-material/Search';
 import DescriptionIcon from '@mui/icons-material/Description';
 import { API_ENDPOINTS } from '../config';
 
-const Search = () => {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
+const Search = ({ searchState, setSearchState }) => {
+  const { query, results, searched } = searchState;
   const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+
+  const setQuery = (newQuery) => {
+    setSearchState(prev => ({ ...prev, query: newQuery }));
+  };
+
+  const setResults = (newResults) => {
+    setSearchState(prev => ({ ...prev, results: newResults }));
+  };
+
+  const setSearched = (val) => {
+    setSearchState(prev => ({ ...prev, searched: val }));
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;

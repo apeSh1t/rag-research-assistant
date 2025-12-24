@@ -21,6 +21,19 @@ function App() {
   const [tabValue, setTabValue] = useState(0);
   const [refreshList, setRefreshList] = useState(0);
 
+  // 持久化搜索状态
+  const [searchState, setSearchState] = useState({
+    query: '',
+    results: [],
+    searched: false
+  });
+
+  // 持久化问答状态
+  const [chatState, setChatState] = useState({
+    messages: [],
+    input: ''
+  });
+
   const handleFileParsed = (parsedData) => {
     setDocumentData(parsedData);
     // Adding parsed document to documents array
@@ -65,11 +78,17 @@ function App() {
           </TabPanel>
 
           <TabPanel value={tabValue} index={1}>
-            <Search documents={documents} />
+            <Search 
+              searchState={searchState} 
+              setSearchState={setSearchState} 
+            />
           </TabPanel>
 
           <TabPanel value={tabValue} index={2}>
-            <AgentChat />
+            <AgentChat 
+              chatState={chatState} 
+              setChatState={setChatState} 
+            />
           </TabPanel>
         </Paper>
       </Container>

@@ -1,10 +1,16 @@
 // src/components/DocumentDisplay.js
 import React, { useEffect, useState } from 'react';
+import { Box, Typography, Paper, Divider, CircularProgress } from '@mui/material';
 
-const DocumentDisplay = ({ paperId }) => {
-  const [documentData, setDocumentData] = useState(null);
+const DocumentDisplay = ({ documentData: propData, paperId }) => {
+  const [documentData, setDocumentData] = useState(propData);
 
   useEffect(() => {
+    if (propData) {
+      setDocumentData(propData);
+      return;
+    }
+
     const fetchDocument = async () => {
       try {
         const response = await fetch(`/api/retrieve?paperId=${paperId}`);
@@ -23,24 +29,36 @@ const DocumentDisplay = ({ paperId }) => {
     if (paperId) {
       fetchDocument();
     }
-  }, [paperId]);
+  }, [paperId, propData]);
 
   if (!documentData) {
-    return <p>Loading document...</p>;
+    return (
+      <Box sx={{ p: 3, textAlign: 'center' }}>
+        <CircularProgress size={24} sx={{ mb: 1 }} />
+        <Typography color="textSecondary">正在加载文档内容...</Typography>
+      </Box>
+    );
   }
 
   return (
-    <div>
-      <h2>{documentData.title}</h2>
-      <div>
-        {documentData.sections.map((section, index) => (
-          <div key={index}>
-            <h3>{section.section}</h3>
-            <p>{section.content}</p>
-          </div>
+    <Box sx={{ mt: 3 }}>
+      <Typography variant="h5" gutterBottom color="primary">
+        {documentData.title || '已解析文档内容'}
+      </Typography>
+      <Paper variant="outlined" sx={{ p: 2, bgcolor: '#f9f9f9' }}>
+        {documentData.sections && documentData.sections.map((section, index) => (
+          <Box key={index} sx={{ mb: 3 }}>
+            <Typography variant="h6" color="secondary" gutterBottom>
+              {section.section}
+            </Typography>
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+              {section.content}
+            </Typography>
+            {index < documentData.sections.length - 1 && <Divider sx={{ mt: 2 }} />}
+          </Box>
         ))}
-      </div>
-    </div>
+      </Paper>
+    </Box>
   );
 };
 
