@@ -1,38 +1,27 @@
 from pathlib import Path
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import SentenceTransformerEmbeddings
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import tempfile
+from knowledge_base.enhanced_system import EnhancedVectorStore, DotsHierarchicalChunker, PDFProcessor
 
 class KnowledgeBase:
     def __init__(self, kb_dir: str = "knowledge_base", use_english: bool = True):
         self.kb_dir = Path(kb_dir)
         self.use_english = use_english
-        self.embedding_model = SentenceTransformerEmbeddings(
-            model_name="BAAI/bge-base-en-v1.5"  # 使用更优秀的英文检索模型
-        )
         self.vector_store = None
         self._load_vector_store()
     
     def _load_vector_store(self):
         # 根据语言选择不同的向量库目录
         if self.use_english:
-            persist_dir = self.kb_dir.parent / "chroma_db_en"
+            persist_dir = Path(tempfile.gettempdir()) / "faiss_db_en"
             collection_name = "mixing_kb_en"
         else:
-            persist_dir = self.kb_dir.parent / "chroma_db"
+            persist_dir = Path(tempfile.gettempdir()) / "faiss_db"
             collection_name = "mixing_kb"
         
-        if not persist_dir.exists():
-            raise FileNotFoundError(
-                f"Vector store does not exist: {persist_dir}\n"
-                "Please run: python knowledge_base/build_index.py first"
-            )
-        
-        self.vector_store = Chroma(
-            collection_name=collection_name,
-            embedding_function=self.embedding_model,
-            persist_directory=str(persist_dir)
+        # 使用 EnhancedVectorStore
+        self.vector_store = EnhancedVectorStore(
+            persist_directory=str(persist_dir),
+            collection_name=collection_name
         )
     
     def retrieve(self, query: str, k: int = 3) -> str:
@@ -40,22 +29,40 @@ class KnowledgeBase:
         if self.vector_store is None:
             return "知识库未加载" if not self.use_english else "Knowledge base not loaded"
         
-        results = self.vector_store.similarity_search_with_score(query, k=k)
+        results = self.vector_store.retrieve(query, top_k=k)
         
         if not results:
             return f"未找到与'{query}'相关的信息" if not self.use_english else f"No information found for '{query}'"
         
         # 显示调试信息
         print(f"🔍 Query: '{query}' - Search results:")
-        for i, (doc, score) in enumerate(results):
-            title = doc.metadata.get('title', 'Unknown')
-            print(f"  {i+1}. Score: {score:.4f} - {title}")
+        for i, res in enumerate(results):
+            title = res['metadata'].get('source', 'Unknown')
+            print(f"  {i+1}. Score: {res['score']:.4f} - {title}")
         
-        # 添加相似度过滤，只返回高质量匹配
-        formatted = "\n\n".join([
-            f"【{doc.metadata.get('title', '未命名')}】(Score: {score:.4f})\n{doc.page_content}"
-            for doc, score in results if score < 1.0  # 调整阈值以过滤低质量匹配
-        ])
+        # 格式化输出
+        formatted_results = []
+        for res in results:
+            # EnhancedVectorStore 返回的是 distance，越小越好。
+            # 但这里我们假设它返回的是 distance。
+            # 如果是 cosine distance, 0 是完全相同。
+            # 之前的代码过滤 score >= 1.0 (distance)。
+            if res['score'] >= 1.0: 
+                continue
+                
+            title = res['metadata'].get('source', '未命名')
+            content = res['text'] # 原始文本
+            context = res['metadata'].get('context_str', '')
+            
+            # 展示时带上上下文信息
+            display_text = f"【{title}】\n"
+            if context:
+                display_text += f"Context: {context}\n"
+            display_text += f"{content}"
+            
+            formatted_results.append(display_text)
+
+        formatted = "\n\n".join(formatted_results)
         
         return formatted if formatted else f"未找到与'{query}'高度相关的信息"
     
@@ -70,14 +77,14 @@ class KnowledgeBase:
             if not all_docs['metadatas']:
                 return "知识库中没有文档"
             
-            titles = [meta.get('title', 'Unknown') for meta in all_docs['metadatas']]
-            return f"知识库包含 {len(titles)} 个文档:\n" + "\n".join(f"- {title}" for title in titles)
+            sources = set([meta.get('source', 'Unknown') for meta in all_docs['metadatas']])
+            return f"知识库包含 {len(sources)} 个文档:\n" + "\n".join(f"- {s}" for s in sources)
         except Exception as e:
             return f"获取文档列表失败: {e}"
     
     def add_document(self, file_path: str, title: str = None):
         """
-        通用文档添加方法，支持 PDF, DOCX, TXT, MD
+        通用文档添加方法，支持 PDF (使用 Enhanced System)
         """
         if self.vector_store is None:
             return {"success": False, "message": "Knowledge base not loaded"}
@@ -89,67 +96,57 @@ class KnowledgeBase:
         print(f"  [KB] 正在处理文档: {doc_title} ({file_ext})")
         
         try:
-            documents = []
             if file_ext == '.pdf':
-                print(f"  [KB] 正在加载 PDF 内容...")
-                try:
-                    from langchain_community.document_loaders import PyPDFLoader
-                    loader = PyPDFLoader(str(file_path))
-                    documents = loader.load()
-                except Exception:
-                    import PyPDF2
-                    with open(file_path, "rb") as f:
-                        reader = PyPDF2.PdfReader(f)
-                        for page in reader.pages:
-                            text = page.extract_text()
-                            if text:
-                                from langchain_core.documents import Document
-                                documents.append(Document(page_content=text))
-            
-            elif file_ext == '.docx':
-                print(f"  [KB] 正在加载 Word 内容...")
-                from langchain_community.document_loaders import Docx2txtLoader
-                loader = Docx2txtLoader(str(file_path))
-                documents = loader.load()
+                print(f"  [KB] 使用 Enhanced PDF Processor 处理...")
+                # 1. PDF -> JSON Structure
+                json_doc = PDFProcessor.process(str(file_path))
+                print(f"  [KB] PDF 处理完成，开始分块...")
+                # 2. Chunking with Hierarchy
+                chunker = DotsHierarchicalChunker(chunk_size=500, chunk_overlap=50)
+                chunks = chunker.chunk(json_doc)
+                print(f"  [KB] 分块完成，开始写入向量库...")
+                # 3. Store
+                self.vector_store.add_chunks(chunks, source_file=doc_title)
+                print(f"  [KB] 向量库写入成功!")
+                return {
+                    "success": True,
+                    "message": f"成功索引 {len(chunks)} 个片段",
+                    "chunks": len(chunks),
+                    "title": doc_title
+                }
+            elif file_ext == '.md':
+                print(f"  [KB] 使用 Enhanced Markdown Processor 处理...")
+                # 模拟 PDFProcessor 的输出结构
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
                 
-            elif file_ext in ['.txt', '.md']:
-                print(f"  [KB] 正在加载文本内容...")
-                from langchain_community.document_loaders import TextLoader
-                loader = TextLoader(str(file_path), encoding='utf-8')
-                documents = loader.load()
-            
-            if not documents:
-                return {"success": False, "message": f"未能从文件 {file_ext} 中提取内容"}
-
-            print(f"  [KB] 内容提取完成, 正在进行文本切分...")
-            # 添加元数据
-            for doc in documents:
-                doc.metadata['title'] = doc_title
-                doc.metadata['source'] = str(file_path_obj.name)
-            
-            # 分割文本
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=100,
-                separators=["\n\n", "\n", ". ", " "]
-            )
-            split_docs = text_splitter.split_documents(documents)
-            
-            print(f"  [KB] 切分完成, 共有 {len(split_docs)} 个片段。正在调用 Embedding 模型写入向量库...")
-            print(f"  [KB] 注意: 如果是首次运行, 模型加载可能需要 1-2 分钟...")
-            
-            # 添加到向量库
-            self.vector_store.add_documents(split_docs)
-            
-            print(f"  [KB] 向量库写入成功!")
-            return {
-                "success": True,
-                "message": f"成功索引 {len(split_docs)} 个片段",
-                "chunks": len(split_docs),
-                "title": doc_title
-            }
+                layout_info = []
+                for line in content.split('\n'):
+                    line = line.strip()
+                    if not line: continue
+                    layout_info.append({
+                        "text": line,
+                        "category": "Section-header" if line.startswith('#') else "Text",
+                        "page_no": 1
+                    })
+                
+                json_doc = [{"page_no": 1, "full_layout_info": layout_info}]
+                chunker = DotsHierarchicalChunker(chunk_size=500, chunk_overlap=50)
+                chunks = chunker.chunk(json_doc)
+                self.vector_store.add_chunks(chunks, source_file=doc_title)
+                
+                return {
+                    "success": True,
+                    "message": f"成功索引 {len(chunks)} 个片段",
+                    "chunks": len(chunks),
+                    "title": doc_title
+                }
+            else:
+                return {"success": False, "message": "目前 Enhanced System 仅支持 PDF 和 MD 文件"}
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return {"success": False, "message": f"索引失败: {str(e)}"}
 
     def add_pdf_document(self, pdf_path: str, title: str = None):
@@ -161,16 +158,15 @@ class KnowledgeBase:
         if self.vector_store is None:
             return False
         try:
-            # 1. 查找具有该 title 的所有文档的 ID
-            # Chroma 的 get 方法支持 where 过滤
-            results = self.vector_store.get(where={"title": title})
-            ids = results.get("ids", [])
-            
+            # 查找属于该 title/source 的所有条目并删除
+            results = self.vector_store.get(where={"source": title})
+            ids = results.get("ids", []) if results else []
             if ids:
-                # 2. 按 ID 删除
                 self.vector_store.delete(ids=ids)
-                return True
-            return False
+            else:
+                # fallback delete by where to ensure cleanup
+                self.vector_store.delete(where={"source": title})
+            return True
         except Exception as e:
             print(f"Error deleting document from vector store: {e}")
             return False
