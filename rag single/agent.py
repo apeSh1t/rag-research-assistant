@@ -28,7 +28,7 @@ class Agent:
         @tool
         def search_knowledge(query: str) -> str:
             """
-            搜索知识库获取相关信息。
+            Search the knowledge base for relevant information.
             """
             return self.kb.retrieve(query, k=3)
         
@@ -57,32 +57,33 @@ class Agent:
     
     def _setup_planning_agent(self):
         """设置规划Agent"""   
-        system_prompt = f"""你是solution planing专家。你的任务是分析用户问题，制定详细的分步解决方案计划。简单的问题可以直接用llm计算解决，复杂问题需要查询知识库并调用工具。
+        system_prompt = f"""You are a solution planning expert. Your task is to analyze user problems and formulate detailed step-by-step solution plans. Simple problems can be solved directly by LLM calculation, while complex problems require querying the knowledge base and calling tools.
 
-可用工具：
-- search_knowledge: 查询知识库获取相关方法和原理
+IMPORTANT: You must ALWAYS output in ENGLISH, regardless of the user's input language.
 
+Available Tools:
+- search_knowledge: Query the knowledge base for relevant methods and principles.
 
-工作流程：
-1. 遇到不懂的问题或概念 → 调用search_knowledge查询知识库
-2. 搜不到时尝试分析问题改变query搜索问题，务必根据知识来决策，至少要搜到一次
-3. 根据返回的信息判断，制定详细执行计划：
-   - 如果知识库返回了方法描述 → 理解后发现能直接靠llm计算--添加llm_reasoning step; 如果依然不清楚，继续查询知识库
-4. 根据工具或llm_reasoning的预期返回继续分析是否达到目的，下一步该做什么
-5. 递归处理所有子问题直到能够完全解决用户问题，获得想要的结果
-6. 输出前分析计划评估是否清楚每一步，是否解决用户问题，最终输出是否简单易懂，否则重复上面步骤
-7. 当你得到最终结果时，请务必以 "Final Answer:" 开头输出最终答案。
+Workflow:
+1. Encountering unknown problems or concepts → Call search_knowledge to query the knowledge base.
+2. If search yields no results, try analyzing the problem and changing the query to search again. You must make decisions based on knowledge, and search at least once.
+3. Based on the returned information, formulate a detailed execution plan:
+   - If the knowledge base returns a method description → Understand it and if it can be solved directly by LLM calculation -- add an llm_reasoning step; if still unclear, continue querying the knowledge base.
+4. Based on the expected return of the tool or llm_reasoning, continue to analyze whether the goal is achieved and what to do next.
+5. Recursively handle all sub-problems until the user's problem can be completely solved and the desired result is obtained.
+6. Before outputting, analyze the plan to assess if every step is clear, if it solves the user's problem, and if the final output is simple and easy to understand. Otherwise, repeat the steps above.
+7. When you get the final result, you MUST start your final answer with "Final Answer:".
 
-请务必在思考过程中清晰地描述你的每一步行动，例如：“我将首先搜索关于...的知识”，“根据搜索结果，我发现...，接下来我将...”。
+Please clearly describe your every action during the thinking process, for example: "I will first search for knowledge about...", "Based on the search results, I found..., next I will...".
 
-例子：
-用户: "配制RGB(128,20,190)颜色"
-→ search_knowledge("RGB颜色配制")
-← 返回: 需要RGB→CMY、计算比例、多组分混合
-→ search_knowledge("RGB转CMY")
-← 返回: 公式C=255-R...
-→ 添加直接计算步骤
-→ 分析下一步"计算比例"
+Example:
+User: "Prepare RGB(128,20,190) color"
+→ search_knowledge("RGB color preparation")
+← Returns: Needs RGB→CMY, ratio calculation, multi-component mixing
+→ search_knowledge("RGB to CMY")
+← Returns: Formula C=255-R...
+→ Add direct calculation step
+→ Analyze next step "Calculate ratio"
 """
 
         # 创建工具列表
@@ -119,7 +120,7 @@ class Agent:
         try:
             # 使用Agent执行器处理用户输入
             result = self.agent_executor.invoke({
-                "input": f"请为以下问题制定详细的解决方案计划：\n\n{user_input}"
+                "input": f"Please formulate a detailed solution plan for the following problem:\n\n{user_input}"
             })
             return result
         except Exception as e:
@@ -130,7 +131,7 @@ class Agent:
         异步流式输出 Agent 的思考过程和结果
         """
         # 保持与 run 方法一致的 prompt 构建
-        full_input = f"请为以下问题制定详细的解决方案计划：\n\n{user_input}"
+        full_input = f"Please formulate a detailed solution plan for the following problem:\n\n{user_input}"
         
         try:
             # 记录完整的思考过程和最终答案
@@ -165,7 +166,7 @@ class Agent:
                         
                     yield {
                         "type": "thought",
-                        "content": f"正在使用 {tool_name}...",
+                        "content": f"Using {tool_name}...",
                         "tool": tool_name,
                         "tool_input": tool_input
                     }
@@ -211,7 +212,7 @@ class Agent:
                     if "Action" in buffer:
                         # 找到 Action 的位置
                         action_index = buffer.find("Action")
-                        # Action 之前的内容是思考
+                        # Content before Action is thought
                         thought_content = buffer[:action_index].replace("Thought:", "").replace("Thought", "").strip()
                         if thought_content:
                             yield {"type": "thought_chunk", "content": thought_content}
@@ -238,7 +239,7 @@ class Agent:
                     output = event['data'].get('output')
                     yield {
                         "type": "observation",
-                        "content": str(output) if output else "无结果",
+                        "content": str(output) if output else "No result",
                         "tool": event['name']
                     }
                 
@@ -273,32 +274,29 @@ def test_agent():
     # 测试用例
     test_cases = [
         {
-            "name": "酒精稀释测试",
-            "input": "我需要将95%的酒精稀释到70%"
+            "name": "Alcohol Dilution Test",
+            "input": "I need to dilute 95% alcohol to 70%"
         },
         {
-            "name": "多组分混合测试", 
-            "input": "我需要制备含有0.15浓度NaCl和0.25浓度葡萄糖的混合液。现在有纯水、30%NaCl溶液和60%葡萄糖溶液"
+            "name": "Multi-component Mixing Test", 
+            "input": "I need to prepare a mixture containing 0.15 concentration NaCl and 0.25 concentration glucose. I have pure water, 30% NaCl solution, and 60% glucose solution."
         },
         {
-            "name": "颜色配制测试",
-            "input": "配制RGB(150,20,190)的颜色，k=0.6"
+            "name": "Color Preparation Test",
+            "input": "Prepare RGB(150,20,190) color, k=0.6"
         }
     ]
     
     for i, test_case in enumerate(test_cases, 1):
         print(f"\n{'='*80}")
-        print(f"🎯 规划测试 {i}: {test_case['name']}")
+        print(f"🎯 Planning Test {i}: {test_case['name']}")
         print(f"{'='*80}")
-        print(f"问题: {test_case['input']}")
+        print(f"Problem: {test_case['input']}")
         print("-" * 80)
         
-        # 调用
+        # Call
         result = agent.run(test_case['input'])
         print(result)
-        
-
-        
         print("-" * 80)
         input("\n按Enter继续下一个测试...")
 

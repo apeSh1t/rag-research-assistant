@@ -37,10 +37,10 @@ async def search_documents(request: SearchRequest):
             for doc, score in results_with_scores:
                 if score < 1.2: # 稍微放宽一点阈值
                     formatted_results.append({
-                        "section": doc.metadata.get("title", "未知文档"),
+                        "section": doc.metadata.get("title", "Unknown Document"),
                         "content": doc.page_content,
                         "score": float(score),
-                        "source": doc.metadata.get("source", "未知来源")
+                        "source": doc.metadata.get("source", "Unknown Source")
                     })
             
             return {
@@ -63,6 +63,6 @@ async def search_documents(request: SearchRequest):
     except Exception as e:
         return {
             "status": "error",
-            "message": f"搜索失败: {str(e)}",
+            "message": f"Search failed: {str(e)}",
             "data": []
         }

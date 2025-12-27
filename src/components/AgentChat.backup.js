@@ -5,16 +5,12 @@ import {
   Button,
   Typography,
   CircularProgress,
-  Stack,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails
+  Stack
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
 import PsychologyIcon from '@mui/icons-material/Psychology';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { API_BASE_URL } from '../config';
 
 const AgentChat = ({ chatState, setChatState }) => {
@@ -47,7 +43,6 @@ const AgentChat = ({ chatState, setChatState }) => {
       id: assistantMessageId,
       role: 'assistant',
       content: '',
-      reasoning: [],
       timestamp: new Date().toISOString(),
       isStreaming: true
     };
@@ -99,33 +94,7 @@ const AgentChat = ({ chatState, setChatState }) => {
 
               const msg = { ...newMessages[msgIndex] };
               
-              if (event.type === 'thought') {
-                // 检查是否已存在相同的思考内容（避免重复）
-                const exists = msg.reasoning.some(r => r.thought === event.content);
-                if (!exists) {
-                  msg.reasoning = [...msg.reasoning, {
-                    thought: event.content,
-                    tool: event.tool || 'Thinking',
-                    tool_input: event.tool_input || '',
-                    observation: ''
-                  }];
-                }
-              } else if (event.type === 'thought_chunk') {
-                // 实时追加到最新的思考步骤中
-                if (msg.reasoning.length === 0) {
-                  msg.reasoning = [{ thought: event.content, tool: 'Thinking', tool_input: '', observation: '' }];
-                } else {
-                  const lastStep = { ...msg.reasoning[msg.reasoning.length - 1] };
-                  lastStep.thought = (lastStep.thought || '') + event.content;
-                  msg.reasoning[msg.reasoning.length - 1] = lastStep;
-                }
-              } else if (event.type === 'observation') {
-                if (msg.reasoning.length > 0) {
-                  const lastStep = { ...msg.reasoning[msg.reasoning.length - 1] };
-                  lastStep.observation = event.content;
-                  msg.reasoning[msg.reasoning.length - 1] = lastStep;
-                }
-              } else if (event.type === 'answer_chunk') {
+              if (event.type === 'answer_chunk') {
                 msg.content = (msg.content || '') + event.content;
               } else if (event.type === 'final_answer') {
                 msg.content = event.content;
@@ -145,19 +114,6 @@ const AgentChat = ({ chatState, setChatState }) => {
         }
         if (done) break;
       }
-      
-      // 流结束后，确保关闭 streaming 状态
-      setChatState(prev => {
-        const newMessages = [...prev.messages];
-        const msgIndex = newMessages.findIndex(m => m.id === assistantMessageId);
-        if (msgIndex !== -1 && newMessages[msgIndex].isStreaming) {
-          newMessages[msgIndex] = {
-            ...newMessages[msgIndex],
-            isStreaming: false
-          };
-        }
-        return { ...prev, messages: newMessages };
-      });
     } catch (err) {
       console.error('Fetch error:', err);
       setChatState(prev => {
@@ -211,90 +167,6 @@ const AgentChat = ({ chatState, setChatState }) => {
                   </span>
                 </div>
                 <div className={`message-bubble ${msg.role}`}>
-                  {/* Reasoning steps - shown before answer for assistant messages */}
-                  {msg.role === 'assistant' && msg.reasoning && msg.reasoning.length > 0 && (
-                    <Box sx={{ mb: 2 }}>
-                      <Accordion 
-                        variant="outlined" 
-                        sx={{ 
-                          bgcolor: 'rgba(99, 102, 241, 0.05)', 
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '8px !important',
-                          overflow: 'hidden',
-                          '&:before': { display: 'none' },
-                          boxShadow: 'none'
-                        }}
-                        defaultExpanded={msg.isStreaming}
-                      >
-                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <PsychologyIcon sx={{ fontSize: 16, mr: 1, color: 'var(--accent)' }} />
-                            <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>
-                              {msg.isStreaming ? 'Thinking...' : `Reasoning Path (${msg.reasoning.length} steps)`}
-                            </Typography>
-                            {msg.isStreaming && <CircularProgress size={12} sx={{ ml: 1, color: 'var(--accent)' }} />}
-                          </Box>
-                        </AccordionSummary>
-                        <AccordionDetails sx={{ p: 1.5, bgcolor: 'white' }}>
-                          <Stack spacing={1.5}>
-                            {msg.reasoning.map((step, sIdx) => (
-                              <Box key={sIdx} sx={{ 
-                                p: 1.5, 
-                                bgcolor: 'rgba(99, 102, 241, 0.03)', 
-                                borderRadius: '6px', 
-                                borderLeft: '3px solid var(--accent)' 
-                              }}>
-                                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', mb: 0.5 }}>
-                                  Step {sIdx + 1}: {step.tool || 'Thinking'}
-                                </Typography>
-                                <Typography sx={{ fontSize: 12, color: 'var(--text-primary)', mb: 1, lineHeight: 1.5 }}>
-                                  {step.thought ? step.thought.replace('Thought:', '').split('Action:')[0].trim() : 'Processing...'}
-                                </Typography>
-                                {step.tool_input && (
-                                  <Box sx={{ mb: 1 }}>
-                                    <Typography sx={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>Input:</Typography>
-                                    <Typography sx={{ 
-                                      fontSize: 11, 
-                                      bgcolor: 'white', 
-                                      p: 0.5, 
-                                      borderRadius: '4px', 
-                                      border: '1px solid var(--border-color)', 
-                                      fontFamily: 'monospace',
-                                      color: 'var(--text-secondary)'
-                                    }}>
-                                      {typeof step.tool_input === 'string' ? step.tool_input : JSON.stringify(step.tool_input)}
-                                    </Typography>
-                                  </Box>
-                                )}
-                                {step.observation ? (
-                                  <Box>
-                                    <Typography sx={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>Result:</Typography>
-                                    <Typography sx={{ 
-                                      fontSize: 11, 
-                                      color: 'var(--text-secondary)', 
-                                      bgcolor: 'rgba(16, 185, 129, 0.05)', 
-                                      p: 0.5, 
-                                      borderRadius: '4px',
-                                      border: '1px solid rgba(16, 185, 129, 0.2)'
-                                    }}>
-                                      {step.observation.length > 200 ? step.observation.substring(0, 200) + '...' : step.observation}
-                                    </Typography>
-                                  </Box>
-                                ) : (
-                                  msg.isStreaming && sIdx === msg.reasoning.length - 1 && (
-                                    <Typography sx={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                      Waiting for result...
-                                    </Typography>
-                                  )
-                                )}
-                              </Box>
-                            ))}
-                          </Stack>
-                        </AccordionDetails>
-                      </Accordion>
-                    </Box>
-                  )}
-
                   <Typography sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                     {msg.content || (msg.isStreaming ? '' : 'No response')}
                   </Typography>

@@ -20,18 +20,18 @@ const FileUpload = ({ onFileParsed }) => {
     const uploadedFile = event.target.files[0];
     if (uploadedFile) {
       setFile(uploadedFile);
-      setStatus({ type: 'info', message: `已选择文件: ${uploadedFile.name}` });
+      setStatus({ type: 'info', message: `Selected: ${uploadedFile.name}` });
     }
   };
 
   const handleUpload = async () => {
     if (!file) {
-      setStatus({ type: 'error', message: '请先选择一个文件' });
+      setStatus({ type: 'error', message: 'Please select a file first' });
       return;
     }
 
     setLoading(true);
-    setStatus({ type: 'info', message: '正在上传并索引文档，请稍候...' });
+    setStatus({ type: 'info', message: 'Uploading and indexing document...' });
 
     const formData = new FormData();
     formData.append('file', file);
@@ -47,7 +47,7 @@ const FileUpload = ({ onFileParsed }) => {
       if (response.ok) {
         setStatus({ 
           type: 'success', 
-          message: `成功！已索引 ${result.data.chunks || 0} 个知识片段。` 
+          message: `Success! Indexed ${result.data.chunks || 0} knowledge chunks.` 
         });
         setFile(null);
         // 触发父组件刷新列表
@@ -57,14 +57,14 @@ const FileUpload = ({ onFileParsed }) => {
       } else {
         setStatus({ 
           type: 'error', 
-          message: result.detail || '上传失败，请检查后端日志' 
+          message: result.detail || 'Upload failed, please check backend logs' 
         });
       }
     } catch (error) {
       console.error('Upload error details:', error);
       setStatus({ 
         type: 'error', 
-        message: `网络错误: ${error.message}。请求地址: ${API_ENDPOINTS.UPLOAD}。请检查后端是否启动并允许跨域。` 
+        message: `Network error: ${error.message}. Request URL: ${API_ENDPOINTS.UPLOAD}. Please check if backend is running and CORS is enabled.` 
       });
     } finally {
       setLoading(false);
@@ -72,14 +72,15 @@ const FileUpload = ({ onFileParsed }) => {
   };
 
   return (
-    <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', bgcolor: '#fafafa' }}>
-      <Stack spacing={2} alignItems="center">
-        <Typography variant="h6" gutterBottom>
-          上传新文档到知识库
-        </Typography>
-        
-        <Typography variant="body2" color="textSecondary">
-          支持 PDF, DOCX, TXT, MD 格式
+    <div className="card">
+      <div className="card-header">
+        <CloudUploadIcon sx={{ color: 'var(--accent)' }} />
+        <h3 className="card-title">Upload Document</h3>
+      </div>
+      
+      <div className="card-body">
+        <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 3 }}>
+          Supported formats: PDF, DOCX, TXT, MD
         </Typography>
 
         <Box sx={{ my: 2 }}>
@@ -96,15 +97,24 @@ const FileUpload = ({ onFileParsed }) => {
               component="span" 
               startIcon={<CloudUploadIcon />}
               disabled={loading}
+              sx={{
+                borderRadius: 'var(--radius-md)',
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+                '&:hover': {
+                  borderColor: 'var(--accent-hover)',
+                  bgcolor: 'rgba(99, 102, 241, 0.05)'
+                }
+              }}
             >
-              选择文件
+              Choose File
             </Button>
           </label>
         </Box>
 
         {file && (
-          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-            待上传: {file.name}
+          <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
+            Ready to upload: {file.name}
           </Typography>
         )}
 
@@ -112,9 +122,10 @@ const FileUpload = ({ onFileParsed }) => {
           variant="contained"
           onClick={handleUpload}
           disabled={!file || loading}
+          className="btn-primary"
           sx={{ minWidth: 150 }}
         >
-          {loading ? <CircularProgress size={24} color="inherit" /> : '开始上传'}
+          {loading ? <CircularProgress size={24} color="inherit" /> : 'Start Upload'}
         </Button>
 
         {status.message && (
@@ -122,8 +133,8 @@ const FileUpload = ({ onFileParsed }) => {
             {status.message}
           </Alert>
         )}
-      </Stack>
-    </Paper>
+      </div>
+    </div>
   );
 };
 

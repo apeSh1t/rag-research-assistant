@@ -30,7 +30,7 @@ async def parse_document(request: ParseRequest):
             break
             
     if not file_path:
-        raise HTTPException(status_code=404, detail="找不到上传的文件")
+        raise HTTPException(status_code=404, detail="Uploaded file not found")
 
     try:
         sections = []
@@ -42,7 +42,7 @@ async def parse_document(request: ParseRequest):
                 loader = PyPDFLoader(str(file_path))
                 docs = loader.load()
             except Exception as e:
-                print(f"PyPDFLoader 失败，尝试备选方案: {e}")
+                print(f"PyPDFLoader failed, trying alternative: {e}")
                 import PyPDF2
                 docs = []
                 with open(file_path, "rb") as f:
@@ -54,10 +54,10 @@ async def parse_document(request: ParseRequest):
                             docs.append(Document(page_content=page_text))
             
             # 简单按页或内容分段
-            for i, doc in enumerate(docs[:5]): # 最多展示前5页
+            for i, doc in enumerate(docs[:5]): # Show max first 5 pages
                 sections.append({
                     "section": f"Page {i+1}",
-                    "content": doc.page_content[:2000] # 每页截取一部分
+                    "content": doc.page_content[:2000] # Truncate per page
                 })
                 
         elif file_ext in ['.txt', '.md']:
@@ -83,7 +83,7 @@ async def parse_document(request: ParseRequest):
                     })
         
         if not sections:
-            sections = [{"section": "内容", "content": "未能提取到有效文本内容。"}]
+            sections = [{"section": "Content", "content": "Failed to extract valid text content."}]
 
         return {
             "status": "success",
@@ -97,4 +97,4 @@ async def parse_document(request: ParseRequest):
     except Exception as e:
         import traceback
         traceback.print_exc() # 在终端打印详细错误
-        raise HTTPException(status_code=500, detail=f"解析失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Parsing failed: {str(e)}")

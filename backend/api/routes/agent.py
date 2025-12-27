@@ -27,7 +27,7 @@ try:
     from knowledge_base.kb import KnowledgeBase
     from agent import Agent
 except ImportError as e:
-    print(f"⚠️ 警告：无法导入 Agent 模块: {e}")
+    print(f"⚠️ Warning: Could not import Agent module: {e}")
     Agent = None
     KnowledgeBase = None
 
@@ -55,7 +55,7 @@ def get_agent():
         if Agent is None or KnowledgeBase is None:
             raise HTTPException(
                 status_code=500, 
-                detail="Agent 模块未正确加载，请检查 rag single 目录"
+                detail="Agent module not loaded correctly, please check rag single directory"
             )
         
         # 初始化知识库
@@ -70,7 +70,7 @@ def get_agent():
         if not api_key:
             raise HTTPException(
                 status_code=500,
-                detail="未配置 API Key，请在 .env 文件中设置 DASHSCOPE_API_KEY 或 OPENAI_API_KEY"
+                detail="API Key not configured, please set DASHSCOPE_API_KEY or OPENAI_API_KEY in .env file"
             )
         
         # 创建 Agent 实例
@@ -82,11 +82,11 @@ def get_agent():
                 base_url=base_url
             )
                 
-            print(f"✅ Agent 初始化成功 (Model: {model_name})")
+            print(f"✅ Agent initialized successfully (Model: {model_name})")
         except Exception as e:
             raise HTTPException(
                 status_code=500,
-                detail=f"Agent 初始化失败: {str(e)}"
+                detail=f"Agent initialization failed: {str(e)}"
             )
     
     return _agent_instance
@@ -113,7 +113,7 @@ async def agent_chat(request: AgentRequest):
                 f"Q: {item.get('question', '')}\nA: {item.get('answer', '')}"
                 for item in request.context
             ])
-            full_input = f"对话历史:\n{context_str}\n\n当前问题: {request.query}"
+            full_input = f"Conversation History:\n{context_str}\n\nCurrent Question: {request.query}"
         
         # 调用 Agent
         result = agent.run(full_input)
@@ -134,7 +134,7 @@ async def agent_chat(request: AgentRequest):
 
             return AgentResponse(
                 status="success",
-                message="Agent 执行成功",
+                message="Agent execution successful",
                 data={
                     "answer": result.get("output", ""),
                     "reasoning": reasoning_steps
@@ -144,7 +144,7 @@ async def agent_chat(request: AgentRequest):
             # 如果返回的是字符串或其他格式
             return AgentResponse(
                 status="success",
-                message="Agent 执行成功",
+                message="Agent execution successful",
                 data={
                     "answer": str(result),
                     "reasoning": []
@@ -158,7 +158,7 @@ async def agent_chat(request: AgentRequest):
         traceback.print_exc()  # 在控制台打印完整错误堆栈
         raise HTTPException(
             status_code=500,
-            detail=f"Agent 执行错误: {str(e)}"
+            detail=f"Agent execution error: {str(e)}"
         )
 
 
@@ -176,7 +176,7 @@ async def agent_chat_stream(request: AgentRequest):
             f"Q: {item.get('question', '')}\nA: {item.get('answer', '')}"
             for item in request.context
         ])
-        full_input = f"对话历史:\n{context_str}\n\n当前问题: {request.query}"
+        full_input = f"Conversation History:\n{context_str}\n\nCurrent Question: {request.query}"
 
     async def event_generator():
         try:
@@ -198,13 +198,13 @@ async def agent_status():
         agent = get_agent()
         return {
             "status": "healthy",
-            "message": "Agent 服务运行正常",
+            "message": "Agent service running normally",
             "model": os.getenv("LLM_MODEL", "qwen-max"),
             "agent_ready": agent is not None
         }
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Agent 服务异常: {str(e)}",
+            "message": f"Agent service error: {str(e)}",
             "agent_ready": False
         }

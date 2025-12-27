@@ -9,6 +9,10 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from dataclasses import dataclass
 from enum import Enum
+try:
+    from langchain.schema import Document
+except Exception:
+    Document = None
 
 # --- From run_chunker_2.py ---
 
@@ -213,7 +217,7 @@ class EnhancedVectorStore:
     
     def add_chunks(self, chunks: Dict[int, DotsChunk], source_file: str = ""):
         """Add chunks to the vector store with enhanced context preservation"""
-        print(f"  [EnhancedVectorStore] 收到 {len(chunks)} 个 chunks，准备处理...")
+        print(f"  [EnhancedVectorStore] Received {len(chunks)} chunks, preparing to process...")
         documents = []
         ids = []
         metadatas = []
@@ -255,7 +259,7 @@ class EnhancedVectorStore:
             metadatas.append(metadata)
         
         if documents:
-            print(f"  [EnhancedVectorStore] 正在生成 Embeddings (文档数量: {len(documents)})...")
+            print(f"  [EnhancedVectorStore] Generating Embeddings (Document count: {len(documents)})...")
             try:
                 # 分批处理，减小单次写入压力
                 batch_size = 5
@@ -265,14 +269,14 @@ class EnhancedVectorStore:
                 for i in range(0, total_docs, batch_size):
                     end_idx = min(i + batch_size, total_docs)
                     batch_no = i // batch_size + 1
-                    print(f"  [EnhancedVectorStore] 处理批次 {batch_no}/{total_batches} (文档 {i+1}-{end_idx})...")
+                    print(f"  [EnhancedVectorStore] Processing batch {batch_no}/{total_batches} (Documents {i+1}-{end_idx})...")
                     
                     batch_docs = documents[i:end_idx]
                     batch_ids = ids[i:end_idx]
                     batch_metadatas = metadatas[i:end_idx]
                     
                     try:
-                        print("    [EnhancedVectorStore] 开始计算批次 Embedding...")
+                        print("    [EnhancedVectorStore] Starting batch Embedding calculation...")
                         batch_embeddings = self.embedding_model.encode(batch_docs)
                         # Normalize for cosine similarity
                         batch_embeddings = batch_embeddings / np.linalg.norm(batch_embeddings, axis=1, keepdims=True)
@@ -289,21 +293,21 @@ class EnhancedVectorStore:
 
                         # Add to index
                         self.index.add(batch_embeddings.astype('float32'))
-                        print(f"    [EnhancedVectorStore] 批次 {batch_no} 写入成功。")
+                        print(f"    [EnhancedVectorStore] Batch {batch_no} written successfully.")
                     except Exception as e:
                         import traceback
-                        print(f"    [EnhancedVectorStore] 批次 {batch_no} 写入失败: {e}")
+                        print(f"    [EnhancedVectorStore] Batch {batch_no} write failed: {e}")
                         traceback.print_exc()
                         raise e
                 
                 # Persist after all batches to avoid partial writes
                 self._persist()
-                print(f"  [EnhancedVectorStore] 所有 {total_docs} 个 chunks 已成功写入向量库。")
+                print(f"  [EnhancedVectorStore] All {total_docs} chunks successfully written to vector store.")
             except Exception as e:
-                print(f"  [EnhancedVectorStore] 写入失败: {e}")
+                print(f"  [EnhancedVectorStore] Write failed: {e}")
                 raise e
         else:
-            print("  [EnhancedVectorStore] 没有生成任何文档，跳过写入。")
+            print("  [EnhancedVectorStore] No documents generated, skipping write.")
 
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """Retrieve relevant chunks based on query with full information"""
@@ -326,6 +330,31 @@ class EnhancedVectorStore:
                 "full_doc": self.documents[idx]
             })
         return formatted_results
+
+    # LangChain-style interface for existing routes
+    def similarity_search_with_score(self, query: str, k: int = 5):
+        """Return list of (Document, score) pairs; score is inner product (higher=better)."""
+        if self.index is None or not self.ids:
+            return []
+
+        query_embedding = self.embedding_model.encode([query])
+        query_embedding = query_embedding / np.linalg.norm(query_embedding, axis=1, keepdims=True)
+        scores, idxs = self.index.search(query_embedding.astype('float32'), k)
+
+        results = []
+        for score, idx in zip(scores[0], idxs[0]):
+            if idx < 0 or idx >= len(self.ids):
+                continue
+            meta = dict(self.metadatas[idx]) if isinstance(self.metadatas[idx], dict) else {}
+            # Provide a title fallback for callers expecting it
+            meta.setdefault("title", meta.get("source", ""))
+            content = meta.get("original_text", "")
+            if Document:
+                doc = Document(page_content=content, metadata=meta)
+            else:
+                doc = type("Doc", (), {"page_content": content, "metadata": meta})()
+            results.append((doc, float(score)))
+        return results
 
     def delete_document(self, source_file: str):
         """Delete all chunks belonging to a source file"""

@@ -4,9 +4,7 @@ import {
   Button, 
   Box, 
   Typography, 
-  Paper, 
   Divider, 
-  Chip,
   Stack,
   CircularProgress
 } from '@mui/material';
@@ -64,70 +62,98 @@ const Search = ({ searchState, setSearchState }) => {
   };
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
-        <TextField
-          label="搜索文档内容 (语义搜索)"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyPress={handleKeyPress}
-          fullWidth
-          variant="outlined"
-          placeholder="输入问题或关键词，例如：如何计算稀释比例？"
-        />
-        <Button 
-          variant="contained" 
-          onClick={handleSearch} 
-          startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SearchIcon />}
-          disabled={loading}
-          sx={{ minWidth: 120 }}
-        >
-          搜索
-        </Button>
-      </Stack>
+    <div className="card">
+      <div className="card-header">
+        <SearchIcon sx={{ color: 'var(--accent)' }} />
+        <h3 className="card-title">Semantic Search</h3>
+      </div>
+      
+      <div className="card-body">
+        {/* Search bar */}
+        <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+          <TextField
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyPress={handleKeyPress}
+            fullWidth
+            variant="outlined"
+            placeholder="Ask a question or enter keywords..."
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 'var(--radius-md)',
+                bgcolor: 'white',
+                '& fieldset': { borderColor: 'var(--border-color)' },
+                '&:hover fieldset': { borderColor: 'var(--accent)' },
+                '&.Mui-focused fieldset': { borderColor: 'var(--accent)' }
+              }
+            }}
+          />
+          <Button
+            variant="contained" 
+            onClick={handleSearch} 
+            startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <SearchIcon />}
+            disabled={loading}
+            className="btn-primary"
+          >
+            Search
+          </Button>
+        </Stack>
 
-      <Box>
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : results.length > 0 ? (
-          <Stack spacing={3}>
-            <Typography variant="subtitle2" color="textSecondary">
-              找到 {results.length} 条相关结果：
-            </Typography>
-            {results.map((result, index) => (
-              <Paper key={index} variant="outlined" sx={{ p: 2, bgcolor: '#fcfcfc' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <DescriptionIcon sx={{ fontSize: 20, mr: 1, color: 'primary.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', flexGrow: 1 }}>
-                    {result.section}
+        {/* Results */}
+        <Box>
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 6 }}>
+              <CircularProgress sx={{ color: 'var(--accent)' }} />
+            </Box>
+          ) : results.length > 0 ? (
+            <Stack spacing={2}>
+              <Typography sx={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                {results.length} results found
+              </Typography>
+              {results.map((result, index) => (
+                <Box key={index} className="result-item">
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <DescriptionIcon sx={{ fontSize: 18, color: 'var(--accent)' }} />
+                      <Typography sx={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>
+                        {result.section}
+                      </Typography>
+                    </Box>
+                    <Box className="relevance-badge">
+                      {(result.score ?? 0).toFixed(2)}
+                    </Box>
+                  </Box>
+                  <Divider sx={{ my: 1, borderColor: 'var(--border-color)' }} />
+                  <Typography sx={{ 
+                    whiteSpace: 'pre-wrap', 
+                    color: 'var(--text-secondary)', 
+                    lineHeight: 1.6,
+                    fontSize: 13,
+                    pl: 3.5
+                  }}>
+                    {result.content}
                   </Typography>
-                  <Chip 
-                    label={`相关度: ${(1 - result.score / 2).toFixed(2)}`} 
-                    size="small" 
-                    color="primary" 
-                    variant="outlined" 
-                  />
                 </Box>
-                <Divider sx={{ my: 1 }} />
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: 'text.primary', lineHeight: 1.6 }}>
-                  {result.content}
-                </Typography>
-              </Paper>
-            ))}
-          </Stack>
-        ) : searched ? (
-          <Box sx={{ textAlign: 'center', py: 8 }}>
-            <Typography color="textSecondary">未找到相关内容，请尝试更换关键词。</Typography>
-          </Box>
-        ) : (
-          <Box sx={{ textAlign: 'center', py: 8, border: '1px dashed #ccc', borderRadius: 2 }}>
-            <Typography color="textSecondary">在上方输入内容开始语义搜索</Typography>
-          </Box>
-        )}
-      </Box>
-    </Box>
+              ))}
+            </Stack>
+          ) : searched ? (
+            <div className="empty-state">
+              <SearchIcon sx={{ fontSize: 48, color: 'var(--text-muted)', mb: 2 }} />
+              <Typography sx={{ color: 'var(--text-muted)' }}>
+                No results found. Try different keywords.
+              </Typography>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <SearchIcon sx={{ fontSize: 48, color: 'var(--text-muted)', mb: 2 }} />
+              <Typography sx={{ color: 'var(--text-muted)' }}>
+                Enter keywords above to start semantic search
+              </Typography>
+            </div>
+          )}
+        </Box>
+      </div>
+    </div>
   );
 };
 

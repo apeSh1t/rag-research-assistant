@@ -5,89 +5,62 @@ Build English knowledge base index
 """
 
 import os
+import sys
 from pathlib import Path
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import SentenceTransformerEmbeddings
+
+# 将 rag single 目录添加到 Python 路径，以便能够导入 knowledge_base 模块
+current_file_path = Path(__file__).parent.absolute()
+sys.path.append(str(current_file_path.parent))
+
+from knowledge_base.kb import KnowledgeBase
 
 def build_english_index():
     """构建英文知识库索引"""
     print("🔨 Building English knowledge base index...")
     
+    # 获取当前脚本所在目录
+    current_dir = Path(__file__).parent.absolute()
+    # 根目录 (rag single)
+    root_dir = current_dir.parent
+    
     # 设置路径
-    kb_dir = Path("knowledge_base/problems_en")
-    persist_dir = Path("chroma_db_en")
+    kb_dir = current_dir / "problems_en"
     
     if not kb_dir.exists():
         print(f"❌ English knowledge base directory does not exist: {kb_dir}")
         return
     
-    # 删除旧的向量库（如果可能的话）
-    if persist_dir.exists():
-        import shutil
-        try:
-            shutil.rmtree(persist_dir)
-            print("🗑️ Removed old vector store")
-        except OSError:
-            print("⚠️ Could not remove old vector store, will overwrite")
-    
     try:
-        # 加载英文文档
-        loader = DirectoryLoader(
-            str(kb_dir),
-            glob="**/*.md",
-            loader_cls=TextLoader,
-            loader_kwargs={"encoding": "utf-8"}
-        )
-        documents = loader.load()
-        print(f"📚 Loaded {len(documents)} English documents")
+        # 初始化 KnowledgeBase (它会自动处理向量库的创建和加载)
+        # 注意：KnowledgeBase 内部现在使用的是 EnhancedVectorStore
+        kb = KnowledgeBase(kb_dir=str(current_dir), use_english=True)
         
-        # 显示文档内容
-        for i, doc in enumerate(documents):
-            print(f"\nDocument {i+1}: {doc.metadata.get('source', 'Unknown')}")
-            print(f"Content length: {len(doc.page_content)}")
-            print(f"First 100 chars: {doc.page_content[:100]}...")
+        # 获取所有 md 文件
+        md_files = list(kb_dir.glob("*.md"))
+        print(f"📚 Found {len(md_files)} English documents")
         
-        # 文本分割 - 增加切片大小以保留更多上下文
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,  # 增加到1500字符，保留更多完整信息
-            chunk_overlap=50,  # 增加重叠以保持上下文连贯性
-            separators=["\n\n", "\n", ". ", "! ", "? ", "; ", " "]
-        )
-        split_docs = text_splitter.split_documents(documents)
-        print(f"📄 Split into {len(split_docs)} document chunks")
+        for file_path in md_files:
+            print(f"📄 Processing: {file_path.name}")
+            # 使用新的 add_document 方法 (内部会调用 EnhancedMarkdownChunker)
+            # 注意：虽然 add_document 目前主要针对 PDF，但我们可以稍微调整一下 kb.py 
+            # 或者在这里直接模拟处理。
+            # 为了保持一致性，我们直接调用 kb.add_document
+            result = kb.add_document(str(file_path))
+            if result.get("success"):
+                print(f"  ✅ Indexed {result.get('chunks')} chunks")
+            else:
+                print(f"  ❌ Failed: {result.get('message')}")
         
-        # 使用更优秀的英文嵌入模型
-        embeddings = SentenceTransformerEmbeddings(
-            model_name="BAAI/bge-base-en-v1.5"  # 目前最好的英文检索模型之一
-            # 其他选择:
-            # "sentence-transformers/all-mpnet-base-v2"  # 经典高质量模型
-            # "sentence-transformers/all-MiniLM-L12-v2"  # 平衡准确性和速度
-        )
-        
-        # 创建向量库
-        vector_store = Chroma.from_documents(
-            documents=split_docs,
-            embedding=embeddings,
-            collection_name="mixing_kb_en",
-            persist_directory=str(persist_dir)
-        )
-        
-        print("✅ English knowledge base index built successfully!")
+        print("\n✅ English knowledge base index built successfully!")
         
         # 测试检索
         print("\n🔍 Testing retrieval:")
         test_queries = ["RGB color conversion", "multi-component mixing", "dye preparation"]
         
         for query in test_queries:
-            results = vector_store.similarity_search_with_score(query, k=3)
+            results = kb.retrieve(query, k=2)
             print(f"\nQuery: '{query}'")
-            for i, (result, score) in enumerate(results):
-                print(f"  Result {i+1} (score: {score:.4f}): {result.page_content[:50]}...")
-                print(f"  Source: {result.metadata.get('source', 'Unknown')}")
-        
-        return vector_store
+            print(results)
         
     except Exception as e:
         print(f"❌ Build failed: {e}")

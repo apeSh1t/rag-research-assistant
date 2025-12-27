@@ -1,34 +1,30 @@
 // src/App.js
 import React, { useState } from 'react';
-import { Box, Container, Tabs, Tab, Typography, Paper } from '@mui/material';
 import FileUpload from './components/FileUpload';
 import Search from './components/Search';
-import DocumentDisplay from './components/DocumentDisplay';
-import AgentChat from './components/AgentChat';
+import AgentWorkspace from './components/AgentWorkspace';
 import DocumentList from './components/DocumentList';
+import './App.css';
 
-function TabPanel({ children, value, index }) {
-  return (
-    <div hidden={value !== index}>
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-    </div>
-  );
-}
+// Icon components (using emojis for simplicity)
+const UploadIcon = () => <span className="nav-item-icon">📤</span>;
+const SearchIcon = () => <span className="nav-item-icon">🔍</span>;
+const ChatIcon = () => <span className="nav-item-icon">🤖</span>;
 
 function App() {
   const [documentData, setDocumentData] = useState(null);
   const [documents, setDocuments] = useState([]);
-  const [tabValue, setTabValue] = useState(0);
+  const [activeTab, setActiveTab] = useState('upload');
   const [refreshList, setRefreshList] = useState(0);
 
-  // 持久化搜索状态
+  // Persistent search state
   const [searchState, setSearchState] = useState({
     query: '',
     results: [],
     searched: false
   });
 
-  // 持久化问答状态
+  // Persistent chat state
   const [chatState, setChatState] = useState({
     messages: [],
     input: ''
@@ -36,62 +32,64 @@ function App() {
 
   const handleFileParsed = (parsedData) => {
     setDocumentData(parsedData);
-    // Adding parsed document to documents array
     setDocuments((prevDocs) => [...prevDocs, parsedData]);
-    // Trigger list refresh
     setRefreshList(prev => prev + 1);
   };
 
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
-  };
+  const navItems = [
+    { id: 'upload', label: 'Upload', icon: UploadIcon },
+    { id: 'search', label: 'Search', icon: SearchIcon },
+    { id: 'agent', label: 'AI Assistant', icon: ChatIcon }
+  ];
 
   return (
     <div className="App">
-      <Box sx={{ bgcolor: 'primary.main', color: 'white', p: 3, mb: 3 }}>
-        <Container maxWidth="lg">
-          <Typography variant="h4" component="h1" gutterBottom>
-            🔬 RAG Research Assistant
-          </Typography>
-          <Typography variant="subtitle1">
-            智能文档检索与问答系统 - MVP 1.0
-          </Typography>
-        </Container>
-      </Box>
+      {/* Sidebar Navigation */}
+      <div className="sidebar">
+        <div className="sidebar-header">
+          <h1 className="sidebar-title">
+            🔬 RAG Research
+          </h1>
+          <p className="sidebar-subtitle">Intelligent Document Q&A System</p>
+        </div>
+        
+        <nav className="sidebar-nav">
+          {navItems.map(item => (
+            <button
+              key={item.id}
+              className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(item.id)}
+            >
+              <item.icon />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
 
-      <Container maxWidth="lg">
-        <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
-          <Tabs 
-            value={tabValue} 
-            onChange={handleTabChange}
-            variant="fullWidth"
-            sx={{ borderBottom: 1, borderColor: 'divider' }}
-          >
-            <Tab label="📤 文档上传" />
-            <Tab label="🔍 文档搜索" />
-            <Tab label="🤖 智能问答" />
-          </Tabs>
-
-          <TabPanel value={tabValue} index={0}>
+      {/* Main Content */}
+      <div className="main-content">
+        {activeTab === 'upload' && (
+          <>
             <FileUpload onFileParsed={handleFileParsed} />
             <DocumentList refreshTrigger={refreshList} />
-          </TabPanel>
+          </>
+        )}
 
-          <TabPanel value={tabValue} index={1}>
-            <Search 
-              searchState={searchState} 
-              setSearchState={setSearchState} 
-            />
-          </TabPanel>
+        {activeTab === 'search' && (
+          <Search 
+            searchState={searchState} 
+            setSearchState={setSearchState} 
+          />
+        )}
 
-          <TabPanel value={tabValue} index={2}>
-            <AgentChat 
-              chatState={chatState} 
-              setChatState={setChatState} 
-            />
-          </TabPanel>
-        </Paper>
-      </Container>
+        {activeTab === 'agent' && (
+          <AgentWorkspace 
+            chatState={chatState} 
+            setChatState={setChatState} 
+          />
+        )}
+      </div>
     </div>
   );
 }

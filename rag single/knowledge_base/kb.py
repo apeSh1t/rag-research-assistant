@@ -50,12 +50,12 @@ class KnowledgeBase:
             if res['score'] >= 1.0: 
                 continue
                 
-            title = res['metadata'].get('source', '未命名')
+            title = res['metadata'].get('source', 'Untitled')
             content = res['text'] # 原始文本
             context = res['metadata'].get('context_str', '')
             
             # 展示时带上上下文信息
-            display_text = f"【{title}】\n"
+            display_text = f"[{title}]\n"
             if context:
                 display_text += f"Context: {context}\n"
             display_text += f"{content}"
@@ -64,23 +64,26 @@ class KnowledgeBase:
 
         formatted = "\n\n".join(formatted_results)
         
-        return formatted if formatted else f"未找到与'{query}'高度相关的信息"
+        if not formatted:
+             return f"未找到与'{query}'高度相关的信息" if not self.use_english else f"No highly relevant information found for '{query}'"
+        
+        return formatted
     
     def list_documents(self):
         """列出所有文档"""
         if self.vector_store is None:
-            return "知识库未加载"
+            return "Knowledge base not loaded"
         
         try:
             # 获取所有文档信息
             all_docs = self.vector_store.get()
             if not all_docs['metadatas']:
-                return "知识库中没有文档"
+                return "No documents in knowledge base"
             
             sources = set([meta.get('source', 'Unknown') for meta in all_docs['metadatas']])
-            return f"知识库包含 {len(sources)} 个文档:\n" + "\n".join(f"- {s}" for s in sources)
+            return f"Knowledge base contains {len(sources)} documents:\n" + "\n".join(f"- {s}" for s in sources)
         except Exception as e:
-            return f"获取文档列表失败: {e}"
+            return f"Failed to list documents: {e}"
     
     def add_document(self, file_path: str, title: str = None):
         """
@@ -93,29 +96,29 @@ class KnowledgeBase:
         file_ext = file_path_obj.suffix.lower()
         doc_title = title or file_path_obj.name
         
-        print(f"  [KB] 正在处理文档: {doc_title} ({file_ext})")
+        print(f"  [KB] Processing document: {doc_title} ({file_ext})")
         
         try:
             if file_ext == '.pdf':
-                print(f"  [KB] 使用 Enhanced PDF Processor 处理...")
+                print(f"  [KB] Using Enhanced PDF Processor...")
                 # 1. PDF -> JSON Structure
                 json_doc = PDFProcessor.process(str(file_path))
-                print(f"  [KB] PDF 处理完成，开始分块...")
+                print(f"  [KB] PDF processing complete, starting chunking...")
                 # 2. Chunking with Hierarchy
                 chunker = DotsHierarchicalChunker(chunk_size=500, chunk_overlap=50)
                 chunks = chunker.chunk(json_doc)
-                print(f"  [KB] 分块完成，开始写入向量库...")
+                print(f"  [KB] Chunking complete, starting write to vector store...")
                 # 3. Store
                 self.vector_store.add_chunks(chunks, source_file=doc_title)
-                print(f"  [KB] 向量库写入成功!")
+                print(f"  [KB] Write to vector store successful!")
                 return {
                     "success": True,
-                    "message": f"成功索引 {len(chunks)} 个片段",
+                    "message": f"Successfully indexed {len(chunks)} chunks",
                     "chunks": len(chunks),
                     "title": doc_title
                 }
             elif file_ext == '.md':
-                print(f"  [KB] 使用 Enhanced Markdown Processor 处理...")
+                print(f"  [KB] Using Enhanced Markdown Processor...")
                 # 模拟 PDFProcessor 的输出结构
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
@@ -137,17 +140,17 @@ class KnowledgeBase:
                 
                 return {
                     "success": True,
-                    "message": f"成功索引 {len(chunks)} 个片段",
+                    "message": f"Successfully indexed {len(chunks)} chunks",
                     "chunks": len(chunks),
                     "title": doc_title
                 }
             else:
-                return {"success": False, "message": "目前 Enhanced System 仅支持 PDF 和 MD 文件"}
+                return {"success": False, "message": "Currently Enhanced System only supports PDF and MD files"}
             
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return {"success": False, "message": f"索引失败: {str(e)}"}
+            return {"success": False, "message": f"Indexing failed: {str(e)}"}
 
     def add_pdf_document(self, pdf_path: str, title: str = None):
         """保持向后兼容"""
