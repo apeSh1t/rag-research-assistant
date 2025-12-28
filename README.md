@@ -68,7 +68,6 @@ Navigate to the project root (or `backend` folder depending on your structure pr
 1.  **Install Python Dependencies**:
     ```bash
     pip install -r backend/requirements.txt
-    pip install -r "rag single/requirements.txt"
     ```
     *Note: Ensure you have `torch`, `faiss-cpu`, `langchain`, `fastapi`, `uvicorn`, etc. installed.*
 
@@ -94,8 +93,8 @@ Navigate to the root directory (where `package.json` is located).
 The backend entry point is likely in `backend/main.py`.
 
 ```bash
-# From the root directory
-python -m uvicorn backend.main:app --reload --port 8000
+# From the backend directory
+python main.py
 ```
 *Ensure the backend is running on http://localhost:8000*
 
@@ -115,6 +114,7 @@ rag-research-system/
 │   ├── api/                # API Routes (chat, search, upload)
 │   ├── services/           # Business logic
 │   └── main.py             # Server entry point
+├── enhanced_rag_system/                # 这是一个独立的文件夹，是能够验证我们pdf parsing、chunking和vector store实现的最小可运行系统。
 ├── rag single/             # RAG Core Implementation
 │   ├── agent.py            # LangChain Agent logic
 │   ├── knowledge_base/     # Vector Store & Chunking
