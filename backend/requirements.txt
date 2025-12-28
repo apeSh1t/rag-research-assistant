@@ -16,5 +16,6 @@ aiofiles
 PyPDF2
 pypdf
 python-docx
+pymupdf
 
 python-dotenv

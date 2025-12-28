@@ -34,24 +34,20 @@ class KnowledgeBase:
         if not results:
             return f"未找到与'{query}'相关的信息" if not self.use_english else f"No information found for '{query}'"
         
-        # 显示调试信息
+        # 显示调试信息（相似度越高越好）
         print(f"🔍 Query: '{query}' - Search results:")
         for i, res in enumerate(results):
             title = res['metadata'].get('source', 'Unknown')
             print(f"  {i+1}. Score: {res['score']:.4f} - {title}")
         
         # 格式化输出
+        # 先按相似度降序
+        sorted_results = sorted(results, key=lambda r: r.get('score', 0), reverse=True)
+
         formatted_results = []
-        for res in results:
-            # EnhancedVectorStore 返回的是 distance，越小越好。
-            # 但这里我们假设它返回的是 distance。
-            # 如果是 cosine distance, 0 是完全相同。
-            # 之前的代码过滤 score >= 1.0 (distance)。
-            if res['score'] >= 1.0: 
-                continue
-                
+        for res in sorted_results:
             title = res['metadata'].get('source', 'Untitled')
-            content = res['text'] # 原始文本
+            content = res['text']  # 原始文本
             context = res['metadata'].get('context_str', '')
             
             # 展示时带上上下文信息
@@ -68,6 +64,12 @@ class KnowledgeBase:
              return f"未找到与'{query}'高度相关的信息" if not self.use_english else f"No highly relevant information found for '{query}'"
         
         return formatted
+
+    def retrieve_structured(self, query: str, k: int = 5):
+        """返回结构化的 chunk_info 列表，包含层级/标题等信息。"""
+        if self.vector_store is None:
+            return []
+        return self.vector_store.retrieve_structured(query, top_k=k)
     
     def list_documents(self):
         """列出所有文档"""

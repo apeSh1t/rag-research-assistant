@@ -42,14 +42,13 @@ class DotsChunk:
     children: Optional[List[int]] = None
 
 class DotsHierarchicalChunker:
-    """Hierarchical chunker for Dots OCR JSON documents."""
+    """Hierarchical chunker for Dots OCR JSON documents (aligned with enhanced_rag_system/run_chunker_2.py)."""
 
     MAX_LEVEL = 6  # Maximum heading level to consider
 
-    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
+    def __init__(self, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None):
+        # chunk_size/overlap kept for backward compatibility; not used in this implementation
         self.hierarchy_types = [DotsChunkType.TITLE, DotsChunkType.SECTION_HEADER]
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
 
     def _get_level(self, text: str) -> int:
         """Get the heading level from the text."""
@@ -59,10 +58,8 @@ class DotsHierarchicalChunker:
             level += 1
             stripped_text = stripped_text[1:].lstrip()
 
-        # If no # found, treat as level 1 (basic section header)
         if level == 0:
             return 1
-        # Cap at maximum level
         if level > self.MAX_LEVEL:
             return self.MAX_LEVEL
         return level
@@ -70,10 +67,12 @@ class DotsHierarchicalChunker:
     def chunk(self, json_doc: List[Dict[str, Any]]) -> Dict[int, DotsChunk]:
         """
         Chunk a Dots OCR document while maintaining hierarchical context.
+        Mirrors enhanced_rag_system/run_chunker_2.py behavior.
         """
         heading_by_level: Dict[int, int] = {}
         used_captions: set = set()
         sorted_boxes: List[Dict[str, Any]] = []
+        header_boxes: Dict[int, Dict[str, Any]] = {}
         parsed_chunks: Dict[int, DotsChunk] = {}
 
         # Collect all boxes sorted by order
@@ -82,96 +81,124 @@ class DotsHierarchicalChunker:
             layout_info = page.get("full_layout_info", [])
 
             for box in layout_info:
-                # Add the box to the sorted boxes
                 box["page_no"] = page_no
-                box["idx"] = len(sorted_boxes)  # Assign a box idx for simplicity
+                box["idx"] = len(sorted_boxes)
                 sorted_boxes.append(box)
 
-        # Chunk by hierachy & handle captions for tables & images
-        current_chunk_text = ""
-        current_chunk_boxes = []
-        chunk_idx = 0
-        
-        # Helper to finalize a chunk
-        def finalize_chunk(boxes, text, headings_snapshot):
-            nonlocal chunk_idx
-            if not text:
-                return
-            
-            # Determine category (majority vote or first box)
-            cat = boxes[0].get("category", "Text") if boxes else "Text"
-            pg = boxes[0].get("page_no", 0) if boxes else 0
-            
-            parsed_chunks[chunk_idx] = DotsChunk(
-                chunk_idx=chunk_idx,
-                text=text,
-                category=cat,
-                page_no=pg,
-                headings=list(headings_snapshot.values()) # Store heading IDs
-            )
-            chunk_idx += 1
-
-        for i, box in enumerate(sorted_boxes):
+        # Chunk by hierarchy & handle captions for tables/images
+        for box in sorted_boxes:
+            idx = box.get("idx", -1)
             text = box.get("text", "").strip()
             if not text:
                 continue
 
             category = box.get("category", "Text")
-            
-            # Handle Headings
-            if category in [t.value for t in self.hierarchy_types] or text.startswith("#"):
-                # If we have accumulated text, finalize it before the new header
-                if current_chunk_text:
-                    finalize_chunk(current_chunk_boxes, current_chunk_text, heading_by_level.copy())
-                    current_chunk_text = ""
-                    current_chunk_boxes = []
+            page_no = box.get("page_no", 0)
 
-                # Process this header
-                level = self._get_level(text)
-                
-                # Create a chunk for the header itself
-                header_chunk_idx = chunk_idx
-                parsed_chunks[header_chunk_idx] = DotsChunk(
-                    chunk_idx=header_chunk_idx,
-                    text=text,
-                    category=category,
-                    page_no=box.get("page_no", 0),
-                    headings=list(heading_by_level.values()) # Parent headings
-                )
-                chunk_idx += 1
-                
-                # Update hierarchy context
-                # Remove deeper levels
-                keys_to_remove = [k for k in heading_by_level if k >= level]
-                for k in keys_to_remove:
-                    del heading_by_level[k]
-                heading_by_level[level] = header_chunk_idx
-                
+            def _get_caption() -> Optional[Any]:
+                previous_box = sorted_boxes[idx - 1] if idx > 0 else None
+                next_box = sorted_boxes[idx + 1] if idx < len(sorted_boxes) - 1 else None
+                if previous_box and previous_box.get("category") == DotsChunkType.CAPTION.value and (idx - 1) not in used_captions:
+                    used_captions.add(idx - 1)
+                    return previous_box
+                if next_box and next_box.get("category") == DotsChunkType.CAPTION.value and (idx + 1) not in used_captions:
+                    used_captions.add(idx + 1)
+                    return next_box
+                return None
+
+            def _get_headers_and_register() -> List[int]:
+                if not header_boxes:
+                    return []
+
+                heading_ids = [heading_by_level[k] for k in sorted(heading_by_level.keys())]
+
+                if heading_by_level:
+                    deepest_level = max(heading_by_level.keys())
+                    parent_idx = heading_by_level[deepest_level]
+                    if parent_idx in header_boxes:
+                        header_boxes[parent_idx]["children"].append(idx)
+
+                return heading_ids
+
+            caption_block = None
+
+            if category in [DotsChunkType.TITLE.value, DotsChunkType.SECTION_HEADER.value]:
+                level = 0
+                if category == DotsChunkType.SECTION_HEADER.value:
+                    level = self._get_level(text)
+
+                keys_to_del = [k for k in heading_by_level if k >= level]
+                for k in keys_to_del:
+                    heading_by_level.pop(k, None)
+
+                heading_ids = _get_headers_and_register()
+
+                header_boxes[idx] = {
+                    "text": text,
+                    "level": level,
+                    "page_no": page_no,
+                    "headers": heading_ids,
+                    "children": [],
+                }
+
+                heading_by_level[level] = idx
                 continue
 
-            # Handle Normal Text
-            # Check size limit
-            if len(current_chunk_text) + len(text) + 1 > self.chunk_size and current_chunk_text:
-                finalize_chunk(current_chunk_boxes, current_chunk_text, heading_by_level.copy())
-                # Implement overlap (simplified: keep last box if small enough)
-                # For now, just clear
-                current_chunk_text = ""
-                current_chunk_boxes = []
-            
-            current_chunk_text += (" " if current_chunk_text else "") + text
-            current_chunk_boxes.append(box)
-            
-        # Finalize last chunk
-        if current_chunk_text:
-            finalize_chunk(current_chunk_boxes, current_chunk_text, heading_by_level.copy())
-            
+            elif category in [DotsChunkType.TEXT.value, DotsChunkType.LIST_ITEM.value]:
+                pass
+            elif category == DotsChunkType.TABLE.value:
+                caption_block = _get_caption()
+            elif category == DotsChunkType.PICTURE.value:
+                caption_block = _get_caption()
+            elif category == DotsChunkType.FORMULA.value:
+                caption_block = _get_caption()
+            elif category == DotsChunkType.FOOTNOTE.value:
+                pass
+            elif category in [DotsChunkType.PAGE_HEADER.value, DotsChunkType.PAGE_FOOTER.value]:
+                pass
+            else:
+                pass
+
+            heading_ids = _get_headers_and_register()
+
+            caption = caption_block.get("text") if caption_block else None
+
+            chunk = DotsChunk(
+                chunk_idx=idx,
+                text=text,
+                category=category,
+                page_no=page_no,
+                headings=heading_ids,
+                caption=caption,
+            )
+
+            parsed_chunks[idx] = chunk
+
+        # Add headers to parsed_chunks
+        for header_idx, header_info in header_boxes.items():
+            category = DotsChunkType.SECTION_HEADER.value if header_info["level"] > 0 else DotsChunkType.TITLE.value
+            if header_info["children"] == []:
+                category = DotsChunkType.TEXT.value
+
+            chunk = DotsChunk(
+                chunk_idx=header_idx,
+                text=header_info["text"],
+                category=category,
+                page_no=header_info["page_no"],
+                headings=header_info["headers"],
+                caption=None,
+                children=header_info["children"],
+            )
+
+            parsed_chunks[header_idx] = chunk
+
         return parsed_chunks
 
-# --- From enhanced_rag_system.py ---
+# --- Vector Store (FAISS-backed) ---
 
 class EnhancedVectorStore:
     """Enhanced vector store backed by FAISS (cosine) with metadata sidecar."""
-    
+
     def __init__(self, persist_directory: str, collection_name: str = "document_chunks"):
         # collection_name kept for compatibility; not used in FAISS persistence
         self.persist_directory = Path(persist_directory)
@@ -214,7 +241,7 @@ class EnhancedVectorStore:
                 "metadatas": self.metadatas,
                 "ids": self.ids,
             }, f, ensure_ascii=False, indent=2)
-    
+
     def add_chunks(self, chunks: Dict[int, DotsChunk], source_file: str = ""):
         """Add chunks to the vector store with enhanced context preservation"""
         print(f"  [EnhancedVectorStore] Received {len(chunks)} chunks, preparing to process...")
@@ -225,35 +252,42 @@ class EnhancedVectorStore:
         for chunk_id, chunk in chunks.items():
             # Prepare document content with enhanced context
             context_parts = []
-            
-            # Add category
-            # context_parts.append(f"Category: {chunk.category}")
-            
-            # Add hierarchical context
+
+            # Category
+            context_parts.append(f"Category: {chunk.category}")
+
+            # Hierarchical context
+            heading_texts = []
             if chunk.headings:
-                heading_texts = []
                 for heading_id in chunk.headings:
                     if heading_id in chunks:
-                        heading_texts.append(chunks[heading_id].text)
-                if heading_texts:
-                    context_parts.append(f"Context: {' > '.join(heading_texts)}")
-            
-            # Add the main text
+                        heading_texts.append(chunks[heading_id].text[:100])
+            if heading_texts:
+                context_parts.append(f"Hierarchical Context: {' > '.join(heading_texts)}")
+
+            # Caption
+            if getattr(chunk, "caption", None):
+                context_parts.append(f"Caption: {chunk.caption}")
+
+            # Main content
             context_parts.append(f"Content: {chunk.text}")
-            
-            # Combine all parts for embedding
+
             full_context = "\n".join(context_parts)
-            
-            # Metadata
+
             metadata = {
                 "chunk_id": int(chunk.chunk_idx),
-                "category": chunk.category,
-                "page_no": int(chunk.page_no),
+                "category": chunk.category if chunk.category is not None else "",
+                "page_no": int(chunk.page_no) if chunk.page_no is not None else 0,
                 "source": source_file,
-                "original_text": chunk.text, # Store original text for display
-                "context_str": " > ".join([chunks[h].text for h in chunk.headings if h in chunks])
+                # Preserve both ids and resolved heading texts for downstream clarity
+                "headings_ids": json.dumps(chunk.headings) if chunk.headings is not None else "[]",
+                "headings": json.dumps(heading_texts) if heading_texts else "[]",
+                "caption": chunk.caption if getattr(chunk, "caption", None) else "",
+                "children": json.dumps(chunk.children) if getattr(chunk, "children", None) else "",
+                "original_text": chunk.text,
+                "context_str": " > ".join(heading_texts)
             }
-            
+
             documents.append(full_context)
             ids.append(f"{source_file}_chunk_{chunk_id}")
             metadatas.append(metadata)
@@ -330,6 +364,46 @@ class EnhancedVectorStore:
                 "full_doc": self.documents[idx]
             })
         return formatted_results
+
+    def retrieve_structured(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """Structured retrieval mirroring run_chunker_2 style (chunk_info with hierarchy)."""
+        raw = self.retrieve(query, top_k)
+        structured = []
+        for rank, item in enumerate(raw, 1):
+            meta = item.get("metadata", {})
+            headings = []
+            try:
+                headings = json.loads(meta.get("headings", "[]"))
+            except Exception:
+                headings = meta.get("headings", []) or []
+
+            # Prefer resolved heading texts if present
+            try:
+                resolved_headings = json.loads(meta.get("headings", "[]"))
+            except Exception:
+                resolved_headings = headings
+
+            try:
+                heading_ids = json.loads(meta.get("headings_ids", "[]"))
+            except Exception:
+                heading_ids = []
+
+            structured.append({
+                "rank": rank,
+                "id": item.get("id"),
+                "page_no": meta.get("page_no", 0),
+                "category": meta.get("category", ""),
+                "score": item.get("score", 0.0),
+                "headings_count": len(resolved_headings) if isinstance(resolved_headings, list) else 0,
+                "headings": resolved_headings,
+                "headings_ids": heading_ids,
+                "caption": meta.get("caption", ""),
+                "children": meta.get("children", ""),
+                "source": meta.get("source", ""),
+                "text": meta.get("original_text", ""),
+                "context": meta.get("context_str", ""),
+            })
+        return structured
 
     # LangChain-style interface for existing routes
     def similarity_search_with_score(self, query: str, k: int = 5):
@@ -415,63 +489,168 @@ class EnhancedVectorStore:
 # --- PDF Processor ---
 
 class PDFProcessor:
-    """Converts PDF to the JSON structure expected by DotsHierarchicalChunker"""
+    """Converts PDF to the JSON structure expected by DotsHierarchicalChunker using PyMuPDF (fitz)"""
     
     @staticmethod
+    def _get_font_histogram(doc) -> List[tuple]:
+        """Statistics of font sizes across the document"""
+        font_sizes = []
+        for page in doc:
+            blocks = page.get_text("dict")["blocks"]
+            for b in blocks:
+                if "lines" in b:
+                    for l in b["lines"]:
+                        for s in l["spans"]:
+                            font_sizes.append(round(s["size"], 1))
+        if not font_sizes:
+            return []
+        return sorted(list(set(font_sizes)), reverse=True)
+
+    @staticmethod
     def process(file_path: str) -> List[Dict[str, Any]]:
-        import pypdf
-        
+        try:
+            import fitz
+        except ImportError:
+            print("PyMuPDF (fitz) not found, falling back to pypdf...")
+            # Fallback to original pypdf implementation if fitz is missing
+            import pypdf
+            json_doc = []
+            reader = pypdf.PdfReader(file_path)
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if not text: continue
+                lines = text.split('\n')
+                layout_info = []
+                for line in lines:
+                    line = line.strip()
+                    if not line: continue
+                    category = "Text"
+                    processed_text = line
+                    if line.startswith('#'):
+                        category = "Section-header"
+                    elif len(line) < 50 and not line.endswith(('.', ',', ';')):
+                        if line.isupper() or re.match(r'^\d+\.?\s+[A-Z]', line):
+                            category = "Section-header"
+                            processed_text = f"# {line}"
+                    layout_info.append({"text": processed_text, "category": category, "page_no": i + 1})
+                json_doc.append({"page_no": i + 1, "full_layout_info": layout_info})
+            return json_doc
+
+        doc = fitz.open(file_path)
         json_doc = []
-        reader = pypdf.PdfReader(file_path)
         
-        for i, page in enumerate(reader.pages):
-            text = page.extract_text()
-            if not text:
-                continue
-                
-            lines = text.split('\n')
-            layout_info = []
+        # Get font histogram to determine header sizes
+        sorted_sizes = PDFProcessor._get_font_histogram(doc)
+        
+        # Heuristic: 
+        # Largest size -> Title
+        # 2nd/3rd largest -> Section-header
+        title_size = sorted_sizes[0] if sorted_sizes else 0
+        h1_size = sorted_sizes[1] if len(sorted_sizes) > 1 else 0
+        h2_size = sorted_sizes[2] if len(sorted_sizes) > 2 else 0
+        
+        for page_num, page in enumerate(doc):
+            page_data = {
+                "page_no": page_num + 1,
+                "full_layout_info": []
+            }
             
-            for line in lines:
-                line = line.strip()
-                if not line:
+            blocks = page.get_text("dict")["blocks"]
+            
+            for block in blocks:
+                if block["type"] != 0: # Ignore non-text blocks
                     continue
-                
-                # Heuristic for headers:
-                # 1. Starts with # (Markdown style)
-                # 2. Short line (<= 50 chars) and doesn't end with punctuation (roughly)
-                # 3. All caps
-                
-                category = "Text"
-                processed_text = line
-                
-                is_header = False
-                if line.startswith('#'):
-                    is_header = True
-                    category = "Section-header"
-                elif len(line) < 50 and not line.endswith(('.', ',', ';')):
-                    # Potential header
-                    # If all caps, likely header
-                    if line.isupper():
-                        is_header = True
+                    
+                block_text = ""
+                min_x0, min_y0, max_x1, max_y1 = float('inf'), float('inf'), float('-inf'), float('-inf')
+
+                for line in block["lines"]:
+                    line_text = ""
+                    line_min_x0, line_min_y0, line_max_x1, line_max_y1 = float('inf'), float('inf'), float('-inf'), float('-inf')
+
+                    for span in line["spans"]:
+                        text = span.get("text", "")
+                        if not text.strip() and not block_text:
+                            continue
+
+                        bbox = span.get("bbox", [0, 0, 0, 0])
+                        line_min_x0 = min(line_min_x0, bbox[0])
+                        line_min_y0 = min(line_min_y0, bbox[1])
+                        line_max_x1 = max(line_max_x1, bbox[2])
+                        line_max_y1 = max(line_max_y1, bbox[3])
+
+                        line_text += text
+
+                    if line_text.strip():
+                        if block_text:
+                            block_text += "\n"
+                        block_text += line_text.strip()
+
+                    if line_min_x0 != float('inf'):
+                        min_x0 = min(min_x0, line_min_x0)
+                        min_y0 = min(min_y0, line_min_y0)
+                        max_x1 = max(max_x1, line_max_x1)
+                        max_y1 = max(max_y1, line_max_y1)
+
+                if block_text.strip():
+                    avg_size = 0
+                    size_count = 0
+                    for line in block["lines"]:
+                        for span in line["spans"]:
+                            if span.get("text", "").strip():
+                                avg_size += span.get("size", 0)
+                                size_count += 1
+                    if size_count > 0:
+                        avg_size = round(avg_size / size_count, 1)
+
+                    category = "Text"
+                    processed_text = block_text.strip()
+
+                    if avg_size >= title_size and avg_size > 0:
+                        category = "Title"
+                    elif avg_size >= h1_size and avg_size > 0:
                         category = "Section-header"
-                        # Add # for the chunker to recognize it
-                        processed_text = f"# {line}"
-                    # If it looks like "1. Introduction", likely header
-                    elif re.match(r'^\d+\.?\s+[A-Z]', line):
-                        is_header = True
+                        processed_text = f"# {block_text.strip()}"
+                    elif avg_size >= h2_size and avg_size > 0:
                         category = "Section-header"
-                        processed_text = f"# {line}"
+                        processed_text = f"## {block_text.strip()}"
+
+                    final_bbox = [min_x0, min_y0, max_x1, max_y1] if min_x0 != float('inf') else [0, 0, 0, 0]
+
+                    page_data["full_layout_info"].append({
+                        "text": processed_text,
+                        "category": category,
+                        "page_no": page_num + 1,
+                        "bbox": final_bbox
+                    })
+            
+            json_doc.append(page_data)
+            
+        # Debug: Save the full JSON structure to a file
+        if json_doc:
+            try:
+                # Create debug directory
+                debug_dir = Path(__file__).parent.parent / "debug_output"
+                debug_dir.mkdir(exist_ok=True)
                 
-                layout_info.append({
-                    "text": processed_text,
-                    "category": category,
-                    "page_no": i + 1
-                })
+                # Generate filename based on source file
+                source_name = Path(file_path).stem
+                output_path = debug_dir / f"{source_name}_layout.json"
+                
+                with open(output_path, "w", encoding="utf-8") as f:
+                    json.dump(json_doc, f, ensure_ascii=False, indent=2)
+                    
+                print(f"\n[PDFProcessor] Full layout JSON saved to: {output_path}")
+            except Exception as e:
+                print(f"[PDFProcessor] Failed to save debug JSON: {e}")
+
+            print("\n[PDFProcessor] Generated JSON Structure (First Page Preview):")
+            # Print first page content (limit to first 5 items to avoid spam)
+            preview_doc = json_doc[0].copy()
+            if len(preview_doc["full_layout_info"]) > 5:
+                preview_doc["full_layout_info"] = preview_doc["full_layout_info"][:5] + [{"text": "...", "category": "..."}]
             
-            json_doc.append({
-                "page_no": i + 1,
-                "full_layout_info": layout_info
-            })
-            
+            print(json.dumps(preview_doc, ensure_ascii=False, indent=2))
+            print(f"[PDFProcessor] Total pages processed: {len(json_doc)}\n")
+
         return json_doc

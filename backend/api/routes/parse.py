@@ -38,27 +38,64 @@ async def parse_document(request: ParseRequest):
         
         if file_ext == '.pdf':
             try:
-                from langchain_community.document_loaders import PyPDFLoader
-                loader = PyPDFLoader(str(file_path))
-                docs = loader.load()
+                # Attempt to use Enhanced System (Hierarchical Chunking)
+                if str(RAG_DIR) not in sys.path:
+                    sys.path.insert(0, str(RAG_DIR))
+                from knowledge_base.enhanced_system import PDFProcessor, DotsHierarchicalChunker
+                
+                print(f"Using Enhanced PDF Processor for {file_path.name}")
+                json_doc = PDFProcessor.process(str(file_path))
+                
+                # Use larger chunks for preview
+                chunker = DotsHierarchicalChunker(chunk_size=800, chunk_overlap=50)
+                chunks = chunker.chunk(json_doc)
+
+                # Sort by original chunk index to keep natural order
+                sorted_chunk_items = [chunks[k] for k in sorted(chunks.keys())]
+
+                for chunk in sorted_chunk_items:
+                    # Rehydrate headings text from chunk ids
+                    heading_texts = []
+                    if chunk.headings:
+                        for h_id in chunk.headings:
+                            if h_id in chunks:
+                                heading_texts.append(chunks[h_id].text)
+
+                    section_title = " > ".join(heading_texts) if heading_texts else f"Page {chunk.page_no}"
+
+                    sections.append({
+                        "section": section_title,
+                        "content": chunk.text
+                    })
+
+                    # Limit preview size
+                    if len(sections) >= 50:
+                        break
+                        
             except Exception as e:
-                print(f"PyPDFLoader failed, trying alternative: {e}")
-                import PyPDF2
-                docs = []
-                with open(file_path, "rb") as f:
-                    reader = PyPDF2.PdfReader(f)
-                    for i in range(min(len(reader.pages), 5)):
-                        page_text = reader.pages[i].extract_text()
-                        if page_text:
-                            from langchain_core.documents import Document
-                            docs.append(Document(page_content=page_text))
-            
-            # 简单按页或内容分段
-            for i, doc in enumerate(docs[:5]): # Show max first 5 pages
-                sections.append({
-                    "section": f"Page {i+1}",
-                    "content": doc.page_content[:2000] # Truncate per page
-                })
+                print(f"Enhanced parsing failed ({e}), falling back to basic loader...")
+                try:
+                    from langchain_community.document_loaders import PyPDFLoader
+                    loader = PyPDFLoader(str(file_path))
+                    docs = loader.load()
+                except Exception as e2:
+                    print(f"PyPDFLoader failed: {e2}")
+                    import PyPDF2
+                    docs = []
+                    with open(file_path, "rb") as f:
+                        reader = PyPDF2.PdfReader(f)
+                        for i in range(min(len(reader.pages), 5)):
+                            page_text = reader.pages[i].extract_text()
+                            if page_text:
+                                from langchain_core.documents import Document
+                                docs.append(Document(page_content=page_text))
+                
+                # Simple page-based chunking fallback
+                for i, doc in enumerate(docs[:5]): 
+                    sections.append({
+                        "section": f"Page {i+1}",
+                        "content": doc.page_content[:2000]
+                    })
                 
         elif file_ext in ['.txt', '.md']:
             with open(file_path, 'r', encoding='utf-8') as f:

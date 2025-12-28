@@ -4,7 +4,7 @@ FastAPI Backend for RAG Research Assistant
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from api.routes import upload, search, retrieve, parse, agent
+from api.routes import upload, search, parse, agent
 import uvicorn
 import os
 from pathlib import Path
@@ -40,7 +40,6 @@ app.add_middleware(
 # 注册路由
 app.include_router(upload.router, prefix="/api", tags=["Upload"])
 app.include_router(search.router, prefix="/api", tags=["Search"])
-app.include_router(retrieve.router, prefix="/api", tags=["Retrieve"])
 app.include_router(parse.router, prefix="/api", tags=["Parse"])
 app.include_router(agent.router, prefix="/api", tags=["Agent"])
 

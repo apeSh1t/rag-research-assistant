@@ -30,7 +30,20 @@ class Agent:
             """
             Search the knowledge base for relevant information.
             """
-            return self.kb.retrieve(query, k=3)
+            # Use structured retrieval to surface chunk_info with hierarchy
+            results = self.kb.retrieve_structured(query, k=5)
+            if not results:
+                return "No hits"
+
+            lines = []
+            for item in results:
+                lines.append(
+                    f"[Rank {item.get('rank')}] ID={item.get('id')} | Page={item.get('page_no')} | "
+                    f"Category={item.get('category')} | Score={item.get('score'):.4f} | "
+                    f"Headings={item.get('headings')} | Caption={item.get('caption')} | Source={item.get('source')}\n"
+                    f"Text: {item.get('text')}\nContext: {item.get('context')}"
+                )
+            return "\n\n".join(lines)
         
 
         self.tools = [search_knowledge]
@@ -72,7 +85,7 @@ Workflow:
 4. Based on the expected return of the tool or llm_reasoning, continue to analyze whether the goal is achieved and what to do next.
 5. Recursively handle all sub-problems until the user's problem can be completely solved and the desired result is obtained.
 6. Before outputting, analyze the plan to assess if every step is clear, if it solves the user's problem, and if the final output is simple and easy to understand. Otherwise, repeat the steps above.
-7. When you get the final result, you MUST start your final answer with "Final Answer:".
+7. IMPORTANT: While you think this answer can output to user, you MUST repeat the answer again and start repeating with "Final Answer:".
 
 Please clearly describe your every action during the thinking process, for example: "I will first search for knowledge about...", "Based on the search results, I found..., next I will...".
 
